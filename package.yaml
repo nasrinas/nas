@@ -47,3 +47,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - cekstar
+    - tasty
+    - tasty-hunit
+    - tasty-quickcheck
+    - tasty-smallcheck
