@@ -38,7 +38,7 @@ executables:
     - cekstar
 
 tests:
-  cekstar-test:
+  tests:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
