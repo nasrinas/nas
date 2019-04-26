@@ -5,7 +5,7 @@ import qualified Data.Map as M
 type Address = Int
 type Var = String
 data Opr = Add | Sub | Mul | Leq deriving (Eq, Show)
-data Lambd =  Bind Var Expr deriving Show
+data Lambd =  Bind Var Expr deriving (Show,Eq)
 type Sigma = (Expr,Env,Store,Kont)
 type Env = M.Map Var Address
 
@@ -19,7 +19,7 @@ data Expr = Ref Var
           | If Expr Expr Expr
           | LInt Int
           | LBool Bool
-        deriving Show
+        deriving (Show,Eq)
 
 
  -- The Kont component of the machine is replaced by a pointer to a continuation
@@ -30,16 +30,21 @@ data Kont  = Mt
            | BinOprL Opr Expr Env Address
            | BinOprR Opr Expr Env Address
            | IfK Expr Expr Env Address
-         deriving Show
+         deriving (Show,Eq)
 
 
 data Storable = VInt Int
               | VBool Bool
               | Clo Lambd Env
               | Continue Kont
-            deriving (Show)
+            deriving (Show,Eq)
 
+-- (!) :: Ord k => Map k a -> k -> a.  Find the value at a key. Calls error
+-- when the element can not be found.
 
+-- insert :: Key -> a -> IntMap a -> IntMap a.  Insert a new key/value pair in
+-- the map. If the key is already present in the map, the associated value is
+-- replaced with the supplied value
 ceskS :: Sigma -> Sigma
 ceskS (Ref x,p,s,k)
   = case s M.! (p M.! x) of
@@ -60,20 +65,42 @@ ceskS ((App e1 e2),p,s,k)
 
 ceskS ((Abs l),p,s,AppL e p' addr')
   = (e,p',s,AppR l p addr')
+    where
+      addr' = label s
 
-ceskS ((Abs l),p,s,AppR (Bind x e) p' a)
-  = (e,M.insert x addr' p',M.insert addr' (Clo l p) s,k)
+ceskS (r,p,s,AppR (Bind x e) p' a)
+  = (e,M.insert x addr' p',M.insert addr' (supply r p s) s,k)
     where
       addr'      = label s
       Continue k = s M.! a
 
-ceskS (ite,p,s,IfK t e p' addr')
-  = case ite of
-      LBool True  -> (t,p',s,k)
-      LBool False -> (e,p',s,k)
-  where
-    Continue k = s M.! addr'
+ceskS ((LBool False),p,s,IfK t e p' c)
+  = (e,p',s,k)
+    where
+      Continue k = s M.! c
 
+ceskS ((LBool True),p,s,IfK t e p' c)
+  = (t,p',s,k)
+    where
+      Continue k = s M.! c
+
+supply :: Expr -> Env -> Store -> Storable
+supply (Abs lam) p s = Clo lam p
+supply (LInt i) p  s = VInt i
+supply (LBool b) p s = VBool b
+supply (Ref x) p s   = case s M.! (p M.! x) of
+                         VInt i  -> VInt i
+                         VBool b -> VBool b
+                         _       -> error ("undefined")
+
+
+
+
+
+
+supply e p s      = error (show e)
+
+--The allocation function needs only to return an unused address:
 label :: Store -> Address
 label s = (foldl max 0 (M.keys s)) + 1
 
@@ -102,3 +129,6 @@ ex = App (abs' "x" (Ref "x")) (abs' "y" (Ref "y"))
 -- Smart constructor
 abs' :: Var -> Expr -> Expr
 abs' x e = Abs (Bind x e)
+
+exId :: Expr
+exId = App (abs' "x" (Ref "x")) (LInt 2)
