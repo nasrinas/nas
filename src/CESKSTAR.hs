@@ -1,117 +1,143 @@
 module CESKSTAR where
 
+
 import qualified Data.Map as M
 
-type Address = Int
-type Var = String
-data Opr = Add | Sub | Mul | Leq deriving (Eq, Show)
-data Lambd =  Bind Var Expr deriving (Show,Eq)
+
+type Addr  = Int
+type Var   = String
 type Sigma = (Expr,Env,Store,Kont)
-type Env = M.Map Var Address
+type Env   = M.Map Var Addr
+type Store = M.Map Addr Storable
 
--- The store now maps to denotable values and continuations:
-type Store = M.Map Address Storable
-
-data Expr = Ref Var
-          | Abs Lambd
-          | App Expr Expr
-          | BinOpr Opr Expr Expr
-          | If Expr Expr Expr
-          | LInt Int
-          | LBool Bool
-        deriving (Show,Eq)
-
-
- -- The Kont component of the machine is replaced by a pointer to a continuation
- -- allocated in the store.
-data Kont  = Mt
-           | AppL Expr Env Address
-           | AppR Lambd Env Address
-           | BinOprL Opr Expr Env Address
-           | BinOprR Opr Expr Env Address
-           | IfK Expr Expr Env Address
-         deriving (Show,Eq)
-
-
-data Storable = VInt Int
+data Storable = Clo Lambd Env
+              | VInt Int
               | VBool Bool
-              | Clo Lambd Env
               | Continue Kont
-            deriving (Show,Eq)
+            deriving (Eq, Show)
 
--- (!) :: Ord k => Map k a -> k -> a.  Find the value at a key. Calls error
--- when the element can not be found.
+data Lambd    = Bind Var Expr deriving (Eq, Show)
 
--- insert :: Key -> a -> IntMap a -> IntMap a.  Insert a new key/value pair in
--- the map. If the key is already present in the map, the associated value is
--- replaced with the supplied value
-ceskS :: Sigma -> Sigma
-ceskS (Ref x,p,s,k)
-  = case s M.! (p M.! x) of
-      VInt i     -> (LInt i,p,s,k)
-      VBool b    -> (LBool b,p,s,k)
-      Clo lam p' -> (Abs lam,p',s,k)
-      _          -> error ("unknown")
+data Kont     = Mt
+              | AppL Expr Env Addr
+              | AppR Lambd Env Addr
+              | BinOpR Opr Expr Env Addr
+              | BinOpL Opr Expr Env Addr
+              | IfK Expr Expr Env Addr
+            deriving (Eq, Show)
 
-ceskS (If f t e,p,s,k)
+data Expr     = Ref Var
+              | App Expr Expr
+              | Abs Lambd
+              | LInt Int
+              | LBool Bool
+              | BinOpr Opr Expr Expr
+              | If Expr Expr Expr
+            deriving (Eq, Show)
+
+data Opr      = Add | Mul | Leq deriving (Eq, Show)
+-- | Functions for the next available binding
+label :: Store -> Addr
+label s = (foldl max 0 (M.keys s)) + 1
+
+-- | time-stamped CESK* transition
+tst :: Sigma -> Sigma
+tst (Ref x,p,s,k)
+  = case s M.!(p M.!x) of
+      VInt i       -> (LInt i,p,s,k)
+      VBool b      -> (LBool b,p,s,k)
+      Clo lambd p' -> (Abs lambd,p',s,k)
+
+tst (If f t e,p,s,k)
   = (f,p,M.insert addr' (Continue k) s,IfK t e p addr')
     where
       addr' = label s
 
-ceskS ((App e1 e2),p,s,k)
-  = (e1,p,M.insert addr' (Continue k) s ,AppL e2 p addr')
-    where
-      addr' = label s
+tst (BinOpr Add e1 e2,p,s,k) = (e1,p,s',BinOpL Add e2 p addr')
+  where
+    addr' = label (s)
+    s'    = M.insert addr' (Continue k) s
 
-ceskS ((Abs l),p,s,AppL e p' addr')
-  = (e,p',s,AppR l p addr')
-    where
-      addr' = label s
+tst (v1,p,s,BinOpL Add e2 p' addr') = (e2,p',s,BinOpR Add v1 p' addr')
 
-ceskS (r,p,s,AppR (Bind x e) p' a)
-  = (e,M.insert x addr' p',M.insert addr' (supply r p s) s,k)
-    where
-      addr'      = label s
-      Continue k = s M.! a
+tst (v2,p,s,BinOpR Add v1 p' a) = (sumFun v1 v2,p',s,k)
+  where
+    Continue k = s M.! a
 
-ceskS ((LBool False),p,s,IfK t e p' c)
+tst (BinOpr Mul e1 e2,p,s,k) = (e1,p,s',BinOpL Mul e2 p addr')
+  where
+    addr' = label (s)
+    s'    = M.insert addr' (Continue k) s
+
+tst (v1,p,s,BinOpL Mul e2 p' addr') = (e2,p',s,BinOpR Mul v1 p' addr')
+
+tst (v2,p,s,BinOpR Mul v1 p' a) = (mulFun v1 v2,p',s,k)
+  where
+    Continue k = s M.! a
+
+tst (BinOpr Leq e1 e2,p,s,k) = (e1,p,s',BinOpL Leq e2 p addr')
+  where
+    addr' = label (s)
+    s'    = M.insert addr' (Continue k) s
+
+tst (v1,p,s,BinOpL Leq e2 p' addr') = (e2,p',s,BinOpR Leq v1 p' addr')
+
+tst (v2,p,s,BinOpR Leq v1 p' a) = (leqFun v1 v2,p',s,k)
+  where
+    Continue k = s M.! a
+
+
+tst (App e1 e2,p,s,k) = (e1,p,s',AppL e2 p addr')
+  where
+    addr' = label (s)
+    s'    = M.insert addr' (Continue k) s
+
+tst (Abs lambd,p,s,AppL e2 p' addr') = (e2,p',s,AppR lambd p addr')
+
+tst (r,p,s,AppR (Bind x e) p' a) = (e,p'',s'',k)
+  where
+    p''        = M.insert x addr' p'
+    s''        = M.insert addr' (supply r p s) s
+    Continue k = s M.! a
+    addr'      = label (s)
+
+tst ((LBool False),p,s,IfK t e p' c)
   = (e,p',s,k)
     where
       Continue k = s M.! c
 
-ceskS ((LBool True),p,s,IfK t e p' c)
+tst ((LBool True),p,s,IfK t e p' c)
   = (t,p',s,k)
     where
       Continue k = s M.! c
 
 supply :: Expr -> Env -> Store -> Storable
-supply (Abs lam) p s = Clo lam p
-supply (LInt i) p  s = VInt i
-supply (LBool b) p s = VBool b
-supply (Ref x) p s   = case s M.! (p M.! x) of
-                         VInt i  -> VInt i
-                         VBool b -> VBool b
-                         _       -> error ("undefined")
+supply (Abs lam) p _ = Clo lam p
+supply (LInt i) p _  = VInt i
+supply (LBool b) p _ = VBool b
+supply (Ref x) p  s  = case s M.!(p M.!x) of
+                         v  -> v
 
 
+supply e p _ = error (show e)
 
+sumFun :: Expr -> Expr -> Expr
+sumFun (LInt i) (LInt j) = LInt (i+j)
 
+mulFun :: Expr -> Expr -> Expr
+mulFun (LInt i) (LInt j) = LInt (i*j)
 
+leqFun :: Expr -> Expr -> Expr
+leqFun (LInt i) (LInt j) = LBool (i<=j)
 
-supply e p s      = error (show e)
-
---The allocation function needs only to return an unused address:
-label :: Store -> Address
-label s = (foldl max 0 (M.keys s)) + 1
-
--- The inital state is as same as the one in CESK
 initial :: Expr -> Sigma
 initial e = (e,M.empty,M.empty,Mt)
 
--- The evaluation part is as same as the CESK
 final :: Sigma -> Bool
-final (Abs _,_,_,Mt) = True
-final _              = False
+final (Abs _,_,_,Mt)  = True
+final (LInt _,_,_,Mt) = True
+final (LBool _,_,_,Mt) = True
+final _               = False
 
 reduction :: (Sigma -> Sigma) -> (Sigma -> Bool) -> Sigma -> Sigma
 reduction g final s'
@@ -119,16 +145,7 @@ reduction g final s'
     | otherwise  = reduction g final (g s')
 
 doAll :: Expr -> Sigma
-doAll e = reduction ceskS final (initial e)
+doAll e = reduction tst final (initial e)
 
--- |  >>> doAll ex
---  (Abs (Bind "y" (Ref "y")),fromList [],fromList [(1,Continue Mt),(2,Clo (Bind "y" (Ref "y"),fromList []))],Mt)
-ex :: Expr
-ex = App (abs' "x" (Ref "x")) (abs' "y" (Ref "y"))
-
--- Smart constructor
 abs' :: Var -> Expr -> Expr
 abs' x e = Abs (Bind x e)
-
-exId :: Expr
-exId = App (abs' "x" (Ref "x")) (LInt 2)
