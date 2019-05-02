@@ -53,21 +53,87 @@ unitTests = testGroup "Unit tests"
   ]
 
 initial' :: Assertion
-initial' = myTestGen exT exResult
+initial' = myTestGen ex' exResult
 
 myTestGen :: Expr -> Sigma -> Assertion
 myTestGen e s = result @?= s
   where result = doAll e
 
-exT :: Expr
-exT = App (abs' "x" (Ref "x")) (abs' "y" (Ref "y"))
+
+ex' :: Expr
+ex' = App (abs' "x" (Ref "x")) (abs' "y" (Ref "y"))
+
+intId :: Expr
+intId = App (abs' "x" (Ref "x")) (LInt 2)
+
+boolId :: Expr
+boolId = App (abs' "x" (Ref "x")) (LBool False)
+
+condIf :: Expr
+condIf = App (abs' "x" (If (Ref "x") (LInt 2) (LInt 3))) (LBool True)
+
+addMul :: Expr
+addMul = App  (abs' "x" (If (Ref "x") (BinOpr Add (LInt 1) (LInt 3)) (BinOpr Mul (LInt 5)(LInt 6)))) (LBool False)
+
+leqIf :: Expr
+leqIf = App (abs' "x" (If (BinOpr Leq (Ref "x") (LInt 2)) (LInt 0) (LInt 1))) (LInt 9)
 
 exId :: Expr
-exId = App (abs' "x" (Ref "x")) (LInt 2)
+exId = abs' "x" (Ref "x")
+
+exnotB :: Expr
+exnotB = abs' "x" (If (Ref "x") (LBool False) (LBool True))
+
+exNot :: Expr
+exNot = App (App exId exnotB) (LBool True)
+
 
 exResult :: Sigma
 exResult = ( Abs (Bind "y" (Ref "y"))
-            , empty
-            , fromList [(1,Continue Mt),(2,Clo (Bind "y" (Ref "y")) empty)]
+            , fromList []
+            , fromList [(1,Continue Mt),(2,Clo (Bind "y" (Ref "y")) (fromList []))]
             , Mt
             )
+{-
+intIdResult :: Sigma
+intIdResult = ( LInt 2
+               , fromList [("x",2)]
+               , fromList [(1,Continue Mt),(2,VInt 2)]
+               , Mt
+               )
+
+boolIdResult :: Sigma
+boolIdResult = ( LBool False
+                , fromList [("x",2)]
+                , fromList [(1,Continue Mt),(2,VBool False)]
+                , Mt
+                )
+
+condIfResult :: Sigma
+condIfResult = ( LInt 2
+                , fromList [("x",2)]
+                , fromList [(1,Continue Mt),(2,VBool True),(3,Continue Mt)]
+                , Mt
+                )
+
+addMulResult :: Sigma
+addMulResult = ( LInt 30
+                , fromList [("x",2)]
+                , fromList [(1,Continue Mt),(2,VBool False),(3,Continue Mt),(4,Continue Mt)]
+                , Mt
+                )
+
+leqIfResult :: Sigma
+leqIfResult = ( LInt 1
+               , fromList [("x",2)]
+               , fromList [(1,Continue Mt),(2,VInt 9),(3,Continue Mt),(4,Continue (IfK (LInt 0) (LInt 1) (fromList [("x",2)]) 3))]
+               , Mt
+               )
+
+exNotResult :: Sigma
+exNotResult = ( LBool False
+               , fromList [("x",4)]
+               , fromList [(1,Continue Mt),(2,Continue (AppL (LBool True) (fromList []) 1)),(3,Clo (Bind "x" (If (Ref "x") (LBool False) (LBool True))) (fromList [])),(4,VBool True),(5,Continue Mt)]
+               , Mt
+               )
+-}
