@@ -1,8 +1,8 @@
-module CESKSTAR where
+module Testcesk where
 
 
 import qualified Data.Map as M
-
+import Debug.Trace (trace)
 
 type Addr  = Int
 type Var   = String
@@ -24,6 +24,7 @@ data Kont     = Mt
               | BinOpR Opr Expr Env Addr
               | BinOpL Opr Expr Env Addr
               | IfK Expr Expr Env Addr
+              | LetBind Lambd Env Addr
             deriving (Eq, Show)
 
 data Expr     = Ref Var
@@ -31,11 +32,12 @@ data Expr     = Ref Var
               | Abs Lambd
               | LInt Int
               | LBool Bool
-              | BinOpr Opr Expr Expr
+              | BinOp Opr Expr Expr
               | If Expr Expr Expr
+              | Letrec Lambd Expr
             deriving (Eq, Show)
 
-data Opr      = Add | Mul | Leq deriving (Eq, Show)
+data Opr      = Add | Sub | Mul | Leq deriving (Eq, Show)
 -- | Functions for the next available binding
 label :: Store -> Addr
 label s = (foldl max 0 (M.keys s)) + 1
@@ -53,7 +55,7 @@ tst (If f t e,p,s,k)
     where
       addr' = label s
 
-tst (BinOpr Add e1 e2,p,s,k) = (e1,p,s',BinOpL Add e2 p addr')
+tst (BinOp Add e1 e2,p,s,k) = (e1,p,s',BinOpL Add e2 p addr')
   where
     addr' = label (s)
     s'    = M.insert addr' (Continue k) s
@@ -64,7 +66,18 @@ tst (v2,p,s,BinOpR Add v1 p' a) = (sumFun v1 v2,p',s,k)
   where
     Continue k = s M.! a
 
-tst (BinOpr Mul e1 e2,p,s,k) = (e1,p,s',BinOpL Mul e2 p addr')
+tst (BinOp Sub e1 e2,p,s,k) = (e1,p,s',BinOpL Sub e2 p addr')
+  where
+    addr' = label (s)
+    s'    = M.insert addr' (Continue k) s
+
+tst (v1,p,s,BinOpL Sub e2 p' addr') = (e2,p',s,BinOpR Sub v1 p' addr')
+
+tst (v2,p,s,BinOpR Sub v1 p' a) = (subFun v1 v2,p',s,k)
+  where
+    Continue k = s M.! a
+
+tst (BinOp Mul e1 e2,p,s,k) = (e1,p,s',BinOpL Mul e2 p addr')
   where
     addr' = label (s)
     s'    = M.insert addr' (Continue k) s
@@ -75,7 +88,7 @@ tst (v2,p,s,BinOpR Mul v1 p' a) = (mulFun v1 v2,p',s,k)
   where
     Continue k = s M.! a
 
-tst (BinOpr Leq e1 e2,p,s,k) = (e1,p,s',BinOpL Leq e2 p addr')
+tst (BinOp Leq e1 e2,p,s,k) = (e1,p,s',BinOpL Leq e2 p addr')
   where
     addr' = label (s)
     s'    = M.insert addr' (Continue k) s
@@ -86,6 +99,18 @@ tst (v2,p,s,BinOpR Leq v1 p' a) = (leqFun v1 v2,p',s,k)
   where
     Continue k = s M.! a
 
+--tst e@(Letrec bi bd,p,s,LetBdy ex p' addr') = trace ("got letrec" ++ show e) (ex,p',s,LetBind bi p addr')
+tst (Letrec bi bd,p,s,k) = (bd,p,s',LetBind bi p addr')
+  where
+    addr' = label (s)
+    s'    = M.insert addr' (Continue k) s
+
+tst (r,p,s,LetBind (Bind x e) p' a) = (e,p'',s'',k)
+  where
+    p''        = M.insert x addr' p'
+    s''        = M.insert addr' (supply r p s) s
+    Continue k = s M.! a
+    addr'      = label (s)
 
 tst (App e1 e2,p,s,k) = (e1,p,s',AppL e2 p addr')
   where
@@ -123,6 +148,9 @@ supply e p _ = error (show e)
 
 sumFun :: Expr -> Expr -> Expr
 sumFun (LInt i) (LInt j) = LInt (i+j)
+
+subFun :: Expr -> Expr -> Expr
+subFun (LInt i) (LInt j) = LInt (i-j)
 
 mulFun :: Expr -> Expr -> Expr
 mulFun (LInt i) (LInt j) = LInt (i*j)
