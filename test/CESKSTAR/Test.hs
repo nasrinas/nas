@@ -87,6 +87,12 @@ exnotB = abs' "x" (If (Ref "x") (LBool False) (LBool True))
 exNot :: Expr
 exNot = App (App exId exnotB) (LBool True)
 
+{-exF :: Expr
+exF = Letrec (Bind "f" (Ref "f")) (abs' "n" (If (BinOp Leq (Ref "n")(LInt 0))(LInt 1)(BinOp Mul (Ref "n")(App (Ref "fact")(BinOp Sub (Ref "n")(LInt 1))))))
+
+factor :: Expr
+factor = App exF (LInt 3)
+-}
 
 exResult :: Sigma
 exResult = ( Abs (Bind "y" (Ref "y"))
