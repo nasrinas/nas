@@ -1,4 +1,4 @@
-module Testcesk where
+module CESKSTAR where
 
 
 import qualified Data.Map as M
@@ -24,7 +24,7 @@ data Kont     = Mt
               | BinOpR Opr Expr Env Addr
               | BinOpL Opr Expr Env Addr
               | IfK Expr Expr Env Addr
-              | LetBind Lambd Env Addr
+--              | LetBind Lambd Env Addr
             deriving (Eq, Show)
 
 data Expr     = Ref Var
@@ -34,7 +34,8 @@ data Expr     = Ref Var
               | LBool Bool
               | BinOp Opr Expr Expr
               | If Expr Expr Expr
-              | Letrec Lambd Expr
+              | Fix Var Expr
+--              | Letrec Lambd Expr
             deriving (Eq, Show)
 
 data Opr      = Add | Sub | Mul | Leq deriving (Eq, Show)
@@ -98,7 +99,14 @@ tst (v1,p,s,BinOpL Leq e2 p' addr') = (e2,p',s,BinOpR Leq v1 p' addr')
 tst (v2,p,s,BinOpR Leq v1 p' a) = (leqFun v1 v2,p',s,k)
   where
     Continue k = s M.! a
-
+-- let rec f x = t  is equal to fix f in (\x.t)
+-- <fix f in (\x. t), E, K> --> <t, {f |-> [fix f in (\x. t),E]}::E, K >
+tst (Fix f (Abs (Bind x t)),p,s,k) = (t,p',s',k)
+  where
+    p'    = M.insert f addr' p
+    addr' = label (s)
+    s'    = M.insert addr' (Clo (Bind x t) p) s
+{-
 --tst e@(Letrec bi bd,p,s,LetBdy ex p' addr') = trace ("got letrec" ++ show e) (ex,p',s,LetBind bi p addr')
 tst (Letrec bi bd,p,s,k) = (bd,p,s',LetBind bi p addr')
   where
@@ -111,7 +119,7 @@ tst (r,p,s,LetBind (Bind x e) p' a) = (e,p'',s'',k)
     s''        = M.insert addr' (supply r p s) s
     Continue k = s M.! a
     addr'      = label (s)
-
+-}
 tst (App e1 e2,p,s,k) = (e1,p,s',AppL e2 p addr')
   where
     addr' = label (s)
@@ -125,6 +133,7 @@ tst (r,p,s,AppR (Bind x e) p' a) = (e,p'',s'',k)
     s''        = M.insert addr' (supply r p s) s
     Continue k = s M.! a
     addr'      = label (s)
+
 
 tst ((LBool False),p,s,IfK t e p' c)
   = (e,p',s,k)
@@ -177,3 +186,10 @@ doAll e = reduction tst final (initial e)
 
 abs' :: Var -> Expr -> Expr
 abs' x e = Abs (Bind x e)
+-- Examples:
+{-
+fact' :: Expr
+fact' = Fix "f" (abs' "n" (If (BinOp Leq (Ref "n") (LInt 0))(LInt 1)(BinOp Mul (Ref "n")(App (Ref "f")(BinOp Sub (Ref "n")(LInt 1))))))
+
+factor :: Expr
+factor = App fact' (LInt 3)
