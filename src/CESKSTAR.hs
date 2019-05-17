@@ -14,6 +14,7 @@ data Storable = Clo Lambd Env
               | VInt Int
               | VBool Bool
               | Continue Kont
+              | Clo' Expr Env
             deriving (Eq, Show)
 
 data Lambd    = Bind Var Expr deriving (Eq, Show)
@@ -99,27 +100,7 @@ tst (v1,p,s,BinOpL Leq e2 p' addr') = (e2,p',s,BinOpR Leq v1 p' addr')
 tst (v2,p,s,BinOpR Leq v1 p' a) = (leqFun v1 v2,p',s,k)
   where
     Continue k = s M.! a
--- let rec f x = t  is equal to fix f in (\x.t)
--- <fix f in (\x. t), E, K> --> <t, {f |-> [fix f in (\x. t),E]}::E, K >
-tst (Fix f (Abs (Bind x t)),p,s,k) = (t,p',s',k)
-  where
-    p'    = M.insert f addr' p
-    addr' = label (s)
-    s'    = M.insert addr' (Clo (Bind x t) p) s
-{-
---tst e@(Letrec bi bd,p,s,LetBdy ex p' addr') = trace ("got letrec" ++ show e) (ex,p',s,LetBind bi p addr')
-tst (Letrec bi bd,p,s,k) = (bd,p,s',LetBind bi p addr')
-  where
-    addr' = label (s)
-    s'    = M.insert addr' (Continue k) s
 
-tst (r,p,s,LetBind (Bind x e) p' a) = (e,p'',s'',k)
-  where
-    p''        = M.insert x addr' p'
-    s''        = M.insert addr' (supply r p s) s
-    Continue k = s M.! a
-    addr'      = label (s)
--}
 tst (App e1 e2,p,s,k) = (e1,p,s',AppL e2 p addr')
   where
     addr' = label (s)
@@ -134,6 +115,15 @@ tst (r,p,s,AppR (Bind x e) p' a) = (e,p'',s'',k)
     Continue k = s M.! a
     addr'      = label (s)
 
+-- let rec f x = t  is equal to fix f in (\x.t)
+-- <fix f in (\x. t), E, K> --> <t, {f |-> [fix f in (\x. t),E]}:E, K >
+tst (Fix f (Abs (Bind x t)),p,s,k) = (t,p',s',k)
+  where
+    p'    = M.insert f addr' p
+    s'    = M.insert addr' (Clo' (Fix f (Abs (Bind x t))) p) s
+    addr' = label (s)
+--    s' = case s M.!(p M.!f) of
+--           _ -> M.insert addr' (Clo' (Fix f (Abs (Bind x t))) p) s
 
 tst ((LBool False),p,s,IfK t e p' c)
   = (e,p',s,k)
@@ -187,9 +177,9 @@ doAll e = reduction tst final (initial e)
 abs' :: Var -> Expr -> Expr
 abs' x e = Abs (Bind x e)
 -- Examples:
-{-
+
 fact' :: Expr
-fact' = Fix "f" (abs' "n" (If (BinOp Leq (Ref "n") (LInt 0))(LInt 1)(BinOp Mul (Ref "n")(App (Ref "f")(BinOp Sub (Ref "n")(LInt 1))))))
+fact' = Fix "f" (Abs (Bind "n" (If (BinOp Leq (Ref "n") (LInt 0))(LInt 1)(BinOp Mul (Ref "n")(App (Ref "f")(BinOp Sub (Ref "n")(LInt 1)))))))
 
 factor :: Expr
 factor = App fact' (LInt 3)
